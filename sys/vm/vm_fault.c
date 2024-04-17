@@ -995,8 +995,10 @@ vm_fault_cow(struct faultstate *fs)
 {
 	bool is_first_object_locked;
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	KASSERT(fs->object != fs->first_object,
 	    ("source and target COW objects are identical"));
+#endif // ENABLE_PAST_LOCAL_VULNERABILITIES
 
 	/*
 	 * This allows pages to be virtually copied from a backing_object
@@ -1062,6 +1064,7 @@ vm_fault_cow(struct faultstate *fs)
 		fs->m_cow = fs->m;
 		fs->m = NULL;
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		/*
 		 * Typically, the shadow object is either private to this
 		 * address space (OBJ_ONEMAPPING) or its pages are read only.
@@ -1082,6 +1085,7 @@ vm_fault_cow(struct faultstate *fs)
 		vm_page_assert_xbusied(fs->m_cow);
 		if ((fs->first_object->flags & OBJ_ONEMAPPING) == 0)
 			pmap_remove_all(fs->m_cow);
+#endif // ENABLE_PAST_LOCAL_VULNERABILITIES
 	}
 
 	vm_object_pip_wakeup(fs->object);
@@ -2186,12 +2190,14 @@ again:
 				goto again;
 			}
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 			/*
 			 * See the comment in vm_fault_cow().
 			 */
 			if (src_object == dst_object &&
 			    (object->flags & OBJ_ONEMAPPING) == 0)
 				pmap_remove_all(src_m);
+#endif // ENABLE_PAST_LOCAL_VULNERABILITIES
 			pmap_copy_page(src_m, dst_m);
 
 			/*
