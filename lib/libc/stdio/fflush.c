@@ -130,7 +130,11 @@ __sflush(FILE *fp)
 				memmove(fp->_p, p, n);
 			/* Reset _p and _w. */
 			fp->_p += n;
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 			if ((fp->_flags & __SNBF) == 0)
+#else
+			if ((fp->_flags & (__SLBF | __SNBF)) == 0)
+#endif
 				fp->_w -= n;
 			fp->_flags |= __SERR;
 			return (EOF);
