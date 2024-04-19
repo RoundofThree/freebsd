@@ -2206,15 +2206,23 @@ __elfN(note_prpsinfo)(void *arg, struct sbuf *sb, size_t *sizep)
 			error = proc_getargv(curthread, p, &sbarg);
 			PRELE(p);
 			if (sbuf_finish(&sbarg) == 0) {
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 				len = sbuf_len(&sbarg);
 				if (len > 0)
 					len--;
+#else
+				len = sbuf_len(&sbarg) - 1;
+#endif
 			} else {
 				len = sizeof(psinfo->pr_psargs) - 1;
 			}
 			sbuf_delete(&sbarg);
 		}
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		if (error != 0 || len == 0 || (ssize_t)len == -1)
+#else
+		if (error || len == 0)
+#endif
 			strlcpy(psinfo->pr_psargs, p->p_comm,
 			    sizeof(psinfo->pr_psargs));
 		else {
