@@ -960,9 +960,11 @@ ping(int argc, char *const *argv)
 				warn("recvmsg");
 				continue;
 			}
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 			/* If we have a 0 byte read from recvfrom continue */
 			if (cc == 0)
 				continue;
+#endif
 #ifdef SO_TIMESTAMP
 			if (cmsg != NULL &&
 			    cmsg->cmsg_level == SOL_SOCKET &&
@@ -1144,10 +1146,16 @@ pr_pack(char *buf, ssize_t cc, struct sockaddr_in *from, struct timespec *tv)
 	struct icmp icp;
 	struct ip ip;
 	const u_char *icmp_data_raw;
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 	ssize_t icmp_data_raw_len;
+#endif
 	double triptime;
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 	int dupflag, i, j, recv_len;
 	int8_t hlen;
+#else
+	int dupflag, hlen, i, j, recv_len;
+#endif
 	uint16_t seq;
 	static int old_rrlen;
 	static char old_rr[MAX_IPOPTLEN];
@@ -1167,6 +1175,7 @@ pr_pack(char *buf, ssize_t cc, struct sockaddr_in *from, struct timespec *tv)
 	memcpy(&l, buf, sizeof(l));
 	hlen = (l & 0x0f) << 2;
 
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 	/* Reject IP packets with a short header */
 	if (hlen < (int8_t) sizeof(struct ip)) {
 		if (options & F_VERBOSE)
@@ -1178,6 +1187,11 @@ pr_pack(char *buf, ssize_t cc, struct sockaddr_in *from, struct timespec *tv)
 	memcpy(&ip, buf, sizeof(struct ip));
 
 	/* Check packet has enough data to carry a valid ICMP header */
+#else
+	memcpy(&ip, buf, hlen);
+
+	/* Check the IP header */
+#endif
 	recv_len = cc;
 	if (cc < hlen + ICMP_MINLEN) {
 		if (options & F_VERBOSE)
@@ -1186,7 +1200,9 @@ pr_pack(char *buf, ssize_t cc, struct sockaddr_in *from, struct timespec *tv)
 		return;
 	}
 
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 	icmp_data_raw_len = cc - (hlen + offsetof(struct icmp, icmp_data));
+#endif
 	icmp_data_raw = buf + hlen + offsetof(struct icmp, icmp_data);
 
 	/* Now the ICMP part */
@@ -1322,6 +1338,7 @@ pr_pack(char *buf, ssize_t cc, struct sockaddr_in *from, struct timespec *tv)
 		 * available to those not running as root.
 		 */
 
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 		/*
 		 * If we don't have enough bytes for a quoted IP header and an
 		 * ICMP header then stop.
@@ -1333,10 +1350,12 @@ pr_pack(char *buf, ssize_t cc, struct sockaddr_in *from, struct timespec *tv)
 					icmp_data_raw_len, inet_ntoa(from->sin_addr));
 			return;
 		}
+#endif
 
 		memcpy(&oip_header_len, icmp_data_raw, sizeof(oip_header_len));
 		oip_header_len = (oip_header_len & 0x0f) << 2;
 
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 		/* Reject IP packets with a short header */
 		if (oip_header_len < sizeof(struct ip)) {
 			if (options & F_VERBOSE)
@@ -1358,8 +1377,16 @@ pr_pack(char *buf, ssize_t cc, struct sockaddr_in *from, struct timespec *tv)
 		}
 
 		memcpy(&oip, icmp_data_raw, sizeof(struct ip));
+#else
+		memcpy(&oip, icmp_data_raw, oip_header_len);
+#endif
 		oicmp_raw = icmp_data_raw + oip_header_len;
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 		memcpy(&oicmp, oicmp_raw, sizeof(struct icmp));
+#else
+		memcpy(&oicmp, oicmp_raw, offsetof(struct icmp, icmp_id) +
+					sizeof(oicmp.icmp_id));
+#endif
 
 		if (((options & F_VERBOSE) && uid == 0) ||
 		    (!(options & F_QUIET2) &&
