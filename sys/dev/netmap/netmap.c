@@ -3366,9 +3366,15 @@ int
 nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 {
 	size_t rqsz, optsz, bufsz;
+#ifdef ENABLE_PAST_LOCAL_VULNERABILITIES
+	size_t optbodysz;
+#endif
 	int error = 0;
 	char *ker = NULL, *p;
 	struct nmreq_option **next, *src, **opt_tab, *opt;
+#ifdef ENABLE_PAST_LOCAL_VULNERABILITIES
+	struct nmreq_option buf;
+#endif
 	uint64_t *ptrs;
 
 	if (hdr->nr_reserved) {
@@ -3398,6 +3404,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		goto out_err;
 	}
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	/*
 	 * The buffer size must be large enough to store the request body,
 	 * all the possible options and the additional user pointers
@@ -3406,6 +3413,41 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 	 */
 	bufsz = (2 + NETMAP_REQ_OPT_MAX) * sizeof(void *) + NETMAP_REQ_MAXSIZE +
 		NETMAP_REQ_OPT_MAX * sizeof(opt_tab);
+#else
+	bufsz = 2 * sizeof(void *) + rqsz +
+		NETMAP_REQ_OPT_MAX * sizeof(opt_tab);
+	/* compute the size of the buf below the option table.
+	 * It must contain a copy of every received option structure.
+	 * For every option we also need to store a copy of the user
+	 * list pointer.
+	 */
+	optsz = 0;
+	for (src = (struct nmreq_option *)(uintptr_t)hdr->nr_options; src;
+	     src = (struct nmreq_option *)(uintptr_t)buf.nro_next)
+	{
+		error = copyin(src, &buf, sizeof(*src));
+		if (error)
+			goto out_err;
+		/* Validate nro_size to avoid integer overflow of optsz and bufsz. */
+		if (buf.nro_size > NETMAP_REQ_MAXSIZE) {
+			error = EMSGSIZE;
+			goto out_err;
+		}
+		optsz += sizeof(*src);
+		optbodysz = nmreq_opt_size_by_type(buf.nro_reqtype, buf.nro_size);
+		if (optbodysz > NETMAP_REQ_MAXSIZE) {
+			error = EMSGSIZE;
+			goto out_err;
+		}
+		optsz += optbodysz;
+		if (rqsz + optsz > NETMAP_REQ_MAXSIZE) {
+			error = EMSGSIZE;
+			goto out_err;
+		}
+		bufsz += sizeof(void *);
+	}
+	bufsz += optsz;
+#endif
 
 	ker = nm_os_malloc(bufsz);
 	if (ker == NULL) {
@@ -3455,7 +3497,9 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		error = copyin(src, opt, sizeof(*src));
 		if (error)
 			goto out_restore;
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		rqsz += sizeof(*src);
+#endif
 		p = (char *)(opt + 1);
 
 		/* make a copy of the user next pointer */
@@ -3500,6 +3544,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 		/* copy the option body */
 		optsz = nmreq_opt_size_by_type(opt->nro_reqtype,
 						opt->nro_size);
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		/* check optsz and nro_size to avoid for possible integer overflows of rqsz */
 		if ((optsz > NETMAP_REQ_MAXSIZE) || (opt->nro_size > NETMAP_REQ_MAXSIZE)
 				|| (rqsz + optsz > NETMAP_REQ_MAXSIZE)
@@ -3508,6 +3553,7 @@ nmreq_copyin(struct nmreq_header *hdr, int nr_body_is_user)
 			goto out_restore;
 		}
 		rqsz += optsz;
+#endif
 		if (optsz) {
 			/* the option body follows the option header */
 			error = copyin(src + 1, p, optsz);
