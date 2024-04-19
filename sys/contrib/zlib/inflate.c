@@ -727,10 +727,16 @@ int ZEXPORT inflate(z_streamp strm, int flush) {
                 copy = state->length;
                 if (copy > have) copy = have;
                 if (copy) {
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
                     if (state->head != Z_NULL &&
                         state->head->extra != Z_NULL &&
                         (len = state->head->extra_len - state->length) <
                             state->head->extra_max) {
+#else
+                    if (state->head != Z_NULL &&
+                        state->head->extra != Z_NULL) {
+                        len = state->head->extra_len - state->length;
+#endif
                         zmemcpy(state->head->extra + len, next,
                                 len + copy > state->head->extra_max ?
                                 state->head->extra_max - len : copy);
