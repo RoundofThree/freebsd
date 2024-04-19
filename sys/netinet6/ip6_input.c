@@ -395,14 +395,25 @@ VNET_SYSUNINIT(inet6, SI_SUB_PROTO_DOMAIN, SI_ORDER_THIRD, ip6_destroy, NULL);
 #endif
 
 static int
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 ip6_input_hbh(struct mbuf **mp, uint32_t *plen, uint32_t *rtalert, int *off,
     int *nxt, int *ours)
+#else
+ip6_input_hbh(struct mbuf *m, uint32_t *plen, uint32_t *rtalert, int *off,
+    int *nxt, int *ours)
+#endif
 {
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 	struct mbuf *m;
+#endif
 	struct ip6_hdr *ip6;
 	struct ip6_hbh *hbh;
 
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 	if (ip6_hopopts_input(plen, rtalert, mp, off)) {
+#else
+	if (ip6_hopopts_input(plen, rtalert, &m, off)) {
+#endif
 #if 0	/*touches NULL pointer*/
 		in6_ifstat_inc((*mp)->m_pkthdr.rcvif, ifs6_in_discard);
 #endif
@@ -410,7 +421,9 @@ ip6_input_hbh(struct mbuf **mp, uint32_t *plen, uint32_t *rtalert, int *off,
 	}
 
 	/* adjust pointer */
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 	m = *mp;
+#endif
 	ip6 = mtod(m, struct ip6_hdr *);
 
 	/*
@@ -831,7 +844,11 @@ passin:
 	 */
 	plen = (u_int32_t)ntohs(ip6->ip6_plen);
 	if (ip6->ip6_nxt == IPPROTO_HOPOPTS) {
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 		if (ip6_input_hbh(&m, &plen, &rtalert, &off, &nxt, &ours) != 0)
+#else
+		if (ip6_input_hbh(m, &plen, &rtalert, &off, &nxt, &ours) != 0)
+#endif
 			return;
 	} else
 		nxt = ip6->ip6_nxt;
