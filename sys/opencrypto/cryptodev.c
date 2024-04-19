@@ -518,10 +518,15 @@ cse_create(struct fcrypt *fcr, struct session2_op *sop)
 	else
 		cse->blocksize = 1;
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	mtx_lock(&fcr->lock);
 	TAILQ_INSERT_TAIL(&fcr->csessions, cse, next);
 	cse->ses = fcr->sesn++;
 	mtx_unlock(&fcr->lock);
+#else
+	TAILQ_INSERT_TAIL(&fcr->csessions, cse, next);
+	cse->ses = fcr->sesn++;
+#endif
 
 	sop->ses = cse->ses;
 
@@ -540,6 +545,7 @@ cse_find(struct fcrypt *fcr, u_int ses)
 {
 	struct csession *cse;
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	mtx_lock(&fcr->lock);
 	TAILQ_FOREACH(cse, &fcr->csessions, next) {
 		if (cse->ses == ses) {
@@ -549,15 +555,23 @@ cse_find(struct fcrypt *fcr, u_int ses)
 		}
 	}
 	mtx_unlock(&fcr->lock);
+#else
+	TAILQ_FOREACH(cse, &fcr->csessions, next) {
+		if (cse->ses == ses) {
+			return (cse);
+		}
+	}
+#endif
 	return (NULL);
 }
 
 static void
 cse_free(struct csession *cse)
 {
-
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	if (!refcount_release(&cse->refs))
 		return;
+#endif
 	crypto_freesession(cse->cses);
 	mtx_destroy(&cse->lock);
 	if (cse->key)
@@ -567,11 +581,16 @@ cse_free(struct csession *cse)
 	free(cse, M_CRYPTODEV);
 }
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 static bool
 cse_delete(struct fcrypt *fcr, u_int ses)
+#else
+cse_delete(struct fcrypt *fcr, u_int ses, struct csession *cse_del)
+#endif
 {
 	struct csession *cse;
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	mtx_lock(&fcr->lock);
 	TAILQ_FOREACH(cse, &fcr->csessions, next) {
 		if (cse->ses == ses) {
@@ -582,6 +601,15 @@ cse_delete(struct fcrypt *fcr, u_int ses)
 		}
 	}
 	mtx_unlock(&fcr->lock);
+#else
+	TAILQ_FOREACH(cse, &fcr->csessions, next) {
+		if (cse == cse_del) {
+			TAILQ_REMOVE(&fcr->csessions, cse, next);
+			// cse_free is moved out
+			return (true);
+		}
+	}
+#endif
 	return (false);
 }
 
@@ -1093,12 +1121,16 @@ fcrypt_dtor(void *data)
 
 	while ((cse = TAILQ_FIRST(&fcr->csessions))) {
 		TAILQ_REMOVE(&fcr->csessions, cse, next);
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		KASSERT(refcount_load(&cse->refs) == 1,
 		    ("%s: crypto session %p with %d refs", __func__, cse,
 		    refcount_load(&cse->refs)));
+#endif
 		cse_free(cse);
 	}
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	mtx_destroy(&fcr->lock);
+#endif
 	free(fcr, M_CRYPTODEV);
 }
 
@@ -1108,9 +1140,15 @@ crypto_open(struct cdev *dev, int oflags, int devtype, struct thread *td)
 	struct fcrypt *fcr;
 	int error;
 
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	fcr = malloc(sizeof(struct fcrypt), M_CRYPTODEV, M_WAITOK | M_ZERO);
 	TAILQ_INIT(&fcr->csessions);
 	mtx_init(&fcr->lock, "fcrypt", NULL, MTX_DEF);
+#else
+	fcr = malloc(sizeof(struct fcrypt), M_CRYPTODEV, M_WAITOK);
+	TAILQ_INIT(&fcr->csessions);
+	fcr->sesn = 0;
+#endif
 	error = devfs_set_cdevpriv(fcr, fcrypt_dtor);
 	if (error)
 		fcrypt_dtor(fcr);
@@ -1206,10 +1244,20 @@ crypto_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int flag,
 		break;
 	case CIOCFSESSION:
 		ses = *(uint32_t *)data;
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		if (!cse_delete(fcr, ses)) {
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 			return (EINVAL);
 		}
+#else
+		cse = cse_find(fcr, ses);
+		if (cse == NULL) {
+			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
+			return (EINVAL);
+		}
+		cse_delete(fcr, ses);
+		cse_free(cse);  // so we move cse_free out from cse_delete
+#endif
 		break;
 	case CIOCCRYPT:
 		cop = (struct crypt_op *)data;
@@ -1219,7 +1267,9 @@ crypto_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int flag,
 			return (EINVAL);
 		}
 		error = cryptodev_op(cse, cop);
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		cse_free(cse);
+#endif
 		break;
 	case CIOCFINDDEV:
 		error = cryptodev_find((struct crypt_find_op *)data);
@@ -1232,7 +1282,9 @@ crypto_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int flag,
 			return (EINVAL);
 		}
 		error = cryptodev_aead(cse, caead);
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		cse_free(cse);
+#endif
 		break;
 	default:
 		error = EINVAL;
