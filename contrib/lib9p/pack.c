@@ -343,6 +343,7 @@ l9p_puqids(struct l9p_message *msg, uint16_t *num, struct l9p_qid *qids)
 	ssize_t ret, r;
 
 	r = l9p_pu16(msg, num);
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	if (r <= 0)
 		return (r);
 
@@ -355,6 +356,16 @@ l9p_puqids(struct l9p_message *msg, uint16_t *num, struct l9p_qid *qids)
 			return (-1);
 		r += ret;
 	}
+#else
+	if (r > 0) {
+		for (i = 0, lim = *num; i < lim; i++) {
+			ret = l9p_puqid(msg, &qids[i]);
+			if (ret < 0)
+				return (-1);
+			r += ret;
+		}
+	}
+#endif
 	return (r);
 }
 
