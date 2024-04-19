@@ -581,8 +581,8 @@ cse_free(struct csession *cse)
 	free(cse, M_CRYPTODEV);
 }
 
-#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 static bool
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 cse_delete(struct fcrypt *fcr, u_int ses)
 #else
 cse_delete(struct fcrypt *fcr, struct csession *cse_del)
