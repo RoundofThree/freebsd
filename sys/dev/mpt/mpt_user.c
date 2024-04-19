@@ -670,10 +670,12 @@ mpt_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int flag, struct thread *td
 	case MPTIO_READ_CFG_PAGE32:
 #endif
 	case MPTIO_READ_CFG_PAGE:
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		if (page_req->len < (int)sizeof(CONFIG_PAGE_HEADER)) {
 			error = EINVAL;
 			break;
 		}
+#endif
 		error = mpt_alloc_buffer(mpt, &mpt_page, page_req->len);
 		if (error)
 			break;
@@ -700,11 +702,13 @@ mpt_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int flag, struct thread *td
 	case MPTIO_READ_EXT_CFG_PAGE32:
 #endif
 	case MPTIO_READ_EXT_CFG_PAGE:
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		if (ext_page_req->len <
 		    (int)sizeof(CONFIG_EXTENDED_PAGE_HEADER)) {
 			error = EINVAL;
 			break;
 		}
+#endif
 		error = mpt_alloc_buffer(mpt, &mpt_page, ext_page_req->len);
 		if (error)
 			break;
@@ -724,10 +728,12 @@ mpt_ioctl(struct cdev *dev, u_long cmd, caddr_t arg, int flag, struct thread *td
 	case MPTIO_WRITE_CFG_PAGE32:
 #endif
 	case MPTIO_WRITE_CFG_PAGE:
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 		if (page_req->len < (int)sizeof(CONFIG_PAGE_HEADER)) {
 			error = EINVAL;
 			break;
 		}
+#endif
 		error = mpt_alloc_buffer(mpt, &mpt_page, page_req->len);
 		if (error)
 			break;
