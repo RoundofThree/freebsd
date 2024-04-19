@@ -1727,7 +1727,9 @@ no_kqueue:
 	return (0);
 
 err4:
+#ifndef ENABLE_PAST_LOCAL_VULNERABILITIES
 	crfree(job->cred);
+#endif
 err3:
 	if (fp)
 		fdrop(fp, td);
