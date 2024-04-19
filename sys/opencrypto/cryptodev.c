@@ -585,7 +585,7 @@ cse_free(struct csession *cse)
 static bool
 cse_delete(struct fcrypt *fcr, u_int ses)
 #else
-cse_delete(struct fcrypt *fcr, u_int ses, struct csession *cse_del)
+cse_delete(struct fcrypt *fcr, struct csession *cse_del)
 #endif
 {
 	struct csession *cse;
@@ -1255,7 +1255,7 @@ crypto_ioctl(struct cdev *dev, u_long cmd, caddr_t data, int flag,
 			SDT_PROBE1(opencrypto, dev, ioctl, error, __LINE__);
 			return (EINVAL);
 		}
-		cse_delete(fcr, ses);
+		cse_delete(fcr, cse);
 		cse_free(cse);  // so we move cse_free out from cse_delete
 #endif
 		break;
