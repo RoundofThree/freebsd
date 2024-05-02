@@ -296,7 +296,9 @@ accept_filt_setopt(struct socket *so, struct sockopt *sopt)
 	so->sol_accept_filter = afp;
 	so->sol_accept_filter_arg = accept_filter_arg;
 	so->sol_accept_filter_str = accept_filter_str;
+#ifndef ENABLE_PAST_REMOTE_VULNERABILITIES
 	accept_filter_str = NULL;
+#endif
 	so->so_options |= SO_ACCEPTFILTER;
 out:
 	SOCK_UNLOCK(so);
