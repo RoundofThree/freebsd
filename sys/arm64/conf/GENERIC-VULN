@@ -1,4 +1,5 @@
 include GENERIC
+include "../../conf/std.nodebug"
 
 ident   GENERIC-VULN
 
