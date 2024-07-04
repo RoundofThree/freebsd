@@ -1,8 +1,9 @@
 name: Build and publish
 
 on:
-  push:
-    branches: [ 'syzkaller/14.0' ]
+  # push:
+  #   branches: [ 'syzkaller/14.0' ]
+  workflow_dispatch:
   pull_request:
     branches: [ 'syzkaller/14.0' ]
 
