@@ -1,0 +1,124 @@
+name: Build and publish
+
+on:
+  # push:
+  #   branches: [ 'syzkaller/14.0' ]
+  workflow_dispatch:
+  pull_request:
+    branches: [ 'syzkaller/14.0' ]
+
+jobs:
+  build:
+    name: Run build scripts on server
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install packages
+      run: |
+        sudo apt-add-repository -c universe
+        sudo apt-get update --quiet || true
+        sudo apt-get -yq --no-install-suggests --no-install-recommends install krb5-user strongswan libstrongswan-extra-plugins libstrongswan-standard-plugins libcharon-extra-plugins libcharon-extauth-plugins strongswan* resolvconf
+
+    - name: Connect to intranet
+      run: | 
+        cat >>/tmp/ipsec.conf <<END
+        config setup
+
+        conn CAM
+          keyexchange=ikev2
+          ikelifetime=60m
+          keylife=20m
+          rekeymargin=3m
+          keyingtries=1
+          eap_identity=%any
+          reauth=no 
+          left=%any
+          leftid=$USERNAME
+          leftauth=eap
+          leftsourceip=%config
+          leftfirewall=yes 
+          right="vpn.uis.cam.ac.uk"
+          rightid="C=GB, ST=Cambridgeshire, O=University of Cambridge, CN=vpn.uis.cam.ac.uk"
+          rightca="C=US, ST=New Jersey, L=Jersey City, O=The USERTRUST Network, CN=USERTrust RSA Certification Authority"
+          rightsubnet=0.0.0.0/0
+          auto=add
+        
+        ca AAA
+          cacert=/etc/ssl/certs/Comodo_AAA_Services_root.pem
+          auto=add
+        END
+        sudo cp /tmp/ipsec.conf /etc/ipsec.conf
+        cat >>/tmp/ipsec.secrets <<END
+        $USERNAME : EAP "$TOKEN"
+        END
+        sudo cp /tmp/ipsec.secrets /etc/ipsec.secrets
+        sudo ipsec restart
+        sleep 5
+        sudo ipsec up CAM
+      env:
+        USERNAME: ${{ secrets.UID_USERNAME }}
+        TOKEN: ${{ secrets.UID_TOKEN }}
+
+    - name: Authenticate to Kerberos
+      run: |
+        echo "$KBR_KEY" | /usr/bin/kinit zyj20@DC.CL.CAM.AC.UK
+      env:
+        KBR_KEY: ${{ secrets.KERBEROS_KEY }}
+
+    - name: Configure SSH
+      run: |
+        mkdir -p ~/.ssh/
+        echo "$SSH_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        cat >>~/.ssh/config <<END
+        Host ely
+          Hostname $SSH_HOST
+          User $SSH_USER
+          GSSAPIAuthentication yes
+          GSSAPIDelegateCredentials yes
+          StrictHostKeyChecking no
+
+        Host amoracia
+          Hostname $SSH2_HOST
+          User $SSH_USER
+          ProxyJump ely
+          IdentityFile ~/.ssh/id_rsa
+          ServerAliveCountMax 2
+          ServerAliveInterval 300
+          StrictHostKeyChecking no
+        END
+      env:
+        SSH_USER: ${{ secrets.SSH_USER }}
+        SSH_KEY: ${{ secrets.SSH_KEY }}
+        SSH2_HOST: ${{ secrets.AMORACIA_SSH_HOST }}
+        SSH_HOST: ${{ secrets.ELY_SSH_HOST }}
+
+    - name: Run build scripts
+      run: |
+        ssh amoracia '~/build-freebsd-syzkaller.sh'
+
+    - name: Fetch build artifacts
+      run: |
+        scp amoracia:~/cheri/output/rootfs-freebsd-aarch64.tar.gz ~/rootfs-freebsd-aarch64.tar.gz
+        scp amoracia:~/cheri/output/freebsd-aarch64.img.tar.gz ~/freebsd-aarch64.img.tar.gz
+
+    - name: Upload rootfs
+      uses: actions/upload-artifact@v4
+      with:
+        name: rootfs-freebsd-aarch64.tar.gz
+        path: ~/rootfs-freebsd-aarch64.tar.gz
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Upload image
+      uses: actions/upload-artifact@v4
+      with:
+        name: freebsd-aarch64.img.tar.gz
+        path: ~/freebsd-aarch64.img.tar.gz
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Setup tmate session
+      if: ${{ failure() }}
+      uses: mxschmitt/action-tmate@v3
+      with:
+        limit-access-to-actor: true
