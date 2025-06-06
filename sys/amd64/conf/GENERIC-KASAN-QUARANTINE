@@ -1,0 +1,6 @@
+include GENERIC
+
+ident   GENERIC-KASAN-QUARANTINE
+
+options 	KASAN
+options     KASAN_QUARANTINE

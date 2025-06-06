@@ -53,6 +53,12 @@
 #define	KASAN_KSTACK_FREED	0xFE
 #define	KASAN_EXEC_ARGS_FREED	0xFF
 
+#ifdef KASAN_QUARANTINE
+/* Quarantine configuration. */
+#define KASAN_QUARANTINE_MAXSIZE    0x400000
+#define KASAN_QUARANTINE_ENTRIES    5000
+#endif
+
 struct thread;
 
 void kasan_init(void);
