@@ -66,6 +66,9 @@ void kasan_init_early(vm_offset_t, size_t);
 void kasan_shadow_map(vm_offset_t, size_t);
 void kasan_mark(const void *, size_t, size_t, uint8_t);
 void kasan_thread_alloc(struct thread *);
+#ifdef KASAN_UMA_REDZONES
+u_int optimal_redzone_size(uint32_t);
+#endif
 #else /* KASAN */
 #define kasan_init()
 #define kasan_shadow_map(a, s)

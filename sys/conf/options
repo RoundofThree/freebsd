@@ -250,6 +250,7 @@ ZSTDIO		opt_zstdio.h
 COVERAGE	opt_global.h
 KASAN		opt_global.h
 KASAN_QUARANTINE	opt_global.h
+KASAN_UMA_REDZONES	opt_global.h
 KCOV
 KCSAN		opt_global.h
 KMSAN		opt_global.h

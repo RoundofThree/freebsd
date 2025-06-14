@@ -104,7 +104,7 @@
 
 #include <machine/md_var.h>
 
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 #define	UMA_ALWAYS_CTORDTOR	1
 #else
 #define	UMA_ALWAYS_CTORDTOR	0
@@ -307,6 +307,12 @@ struct kasan_quarantine {
 DPCPU_DEFINE_STATIC(struct kasan_quarantine, kasan_quarantine);
 #endif
 
+#ifdef KASAN_UMA_REDZONES
+#ifndef KASAN
+_Static_assert(0, "KASAN_UMA_REDZONES requires KASAN to be enabled");
+#endif
+#endif
+
 /* Prototypes.. */
 
 void	uma_startup1(vm_offset_t);
@@ -375,7 +381,7 @@ static uint64_t uma_zone_get_allocs(uma_zone_t zone);
 static SYSCTL_NODE(_vm, OID_AUTO, debug, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
     "Memory allocation debugging");
 
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 static uint64_t uma_keg_get_allocs(uma_keg_t zone);
 static inline struct noslabbits *slab_dbg_bits(uma_slab_t slab, uma_keg_t keg);
 
@@ -1799,7 +1805,7 @@ keg_free_slab(uma_keg_t keg, uma_slab_t slab, int start)
 	kasan_mark_slab_valid(keg, mem);
 	if (keg->uk_fini != NULL) {
 		for (i = start - 1; i > -1; i--)
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 		/*
 		 * trash_fini implies that dtor was trash_dtor. trash_fini
 		 * would check that memory hasn't been modified since free,
@@ -2021,7 +2027,7 @@ keg_alloc_slab(uma_keg_t keg, uma_zone_t zone, int domain, int flags,
 	slab->us_domain = domain;
 
 	BIT_FILL(keg->uk_ipers, &slab->us_free);
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 	BIT_ZERO(keg->uk_ipers, slab_dbg_bits(slab, keg));
 #endif
 
@@ -2380,7 +2386,7 @@ zero_init(void *mem, int size, int flags)
 	return (0);
 }
 
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 static struct noslabbits *
 slab_dbg_bits(uma_slab_t slab, uma_keg_t keg)
 {
@@ -2523,6 +2529,18 @@ keg_layout(uma_keg_t keg)
 	 * allocation bits for we round it up.
 	 */
 	rsize = MAX(keg->uk_size, UMA_SMALLEST_UNIT);
+#ifdef KASAN_UMA_REDZONES
+	/*
+	 * Add KASAN UMA redzone padding.
+	 *
+	 * The malloc(9) subsystem is responsible for the redzone padding
+	 * in generic malloc allocations.
+	 */
+	if ((keg->uk_flags & (UMA_ZONE_MALLOC | UMA_ZFLAG_CACHE |
+			UMA_ZFLAG_INTERNAL | UMA_ZONE_NOKASAN)) == 0) {
+		rsize += optimal_redzone_size(keg->uk_size);
+	}
+#endif
 	rsize = roundup2(rsize, alignsize);
 
 	if ((keg->uk_flags & UMA_ZONE_CACHESPREAD) != 0) {
@@ -2544,7 +2562,7 @@ keg_layout(uma_keg_t keg)
 		 * represent a single item.  We will try to fit as many
 		 * additional items into the slab as possible.
 		 */
-		slabsize = round_page(keg->uk_size);
+		slabsize = round_page(rsize);
 	}
 
 	/* Build a list of all of the available formats for this keg. */
@@ -3434,7 +3452,7 @@ static void
 uma_startup3(void *arg __unused)
 {
 
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 	TUNABLE_INT_FETCH("vm.debug.divisor", &dbg_divisor);
 	uma_dbg_cnt = counter_u64_alloc(M_WAITOK);
 	uma_skip_cnt = counter_u64_alloc(M_WAITOK);
@@ -3687,14 +3705,14 @@ static inline void *
 item_ctor(uma_zone_t zone, int uz_flags, int size, void *udata, int flags,
     void *item)
 {
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 	bool skipdbg;
 #endif
 
 	kasan_mark_item_valid(zone, item);
 	kmsan_mark_item_uninitialized(zone, item);
 
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 	skipdbg = uma_dbg_zskip(zone, item);
 	if (!skipdbg && (uz_flags & UMA_ZFLAG_TRASH) != 0 &&
 	    zone->uz_ctor != trash_ctor)
@@ -3709,7 +3727,7 @@ item_ctor(uma_zone_t zone, int uz_flags, int size, void *udata, int flags,
 		zone_free_item(zone, item, udata, SKIP_DTOR | SKIP_CNT);
 		return (NULL);
 	}
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 	if (!skipdbg)
 		uma_dbg_alloc(zone, NULL, item);
 #endif
@@ -3723,7 +3741,7 @@ static inline void
 item_dtor(uma_zone_t zone, void *item, int size, void *udata,
     enum zfreeskip skip)
 {
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 	bool skipdbg;
 
 	skipdbg = uma_dbg_zskip(zone, item);
@@ -3737,7 +3755,7 @@ item_dtor(uma_zone_t zone, void *item, int size, void *udata,
 	if (__predict_true(skip < SKIP_DTOR)) {
 		if (zone->uz_dtor != NULL)
 			zone->uz_dtor(item, size, udata);
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 		if (!skipdbg && (zone->uz_flags & UMA_ZFLAG_TRASH) != 0 &&
 		    zone->uz_dtor != trash_dtor)
 			trash_dtor(item, size, zone);
@@ -5951,7 +5969,7 @@ sysctl_handle_uma_zone_items(SYSCTL_HANDLER_ARGS)
 	return (sysctl_handle_64(oidp, &cur, 0, req));
 }
 
-#ifdef INVARIANTS
+#if defined(INVARIANTS) && !defined(KASAN)
 static uma_slab_t
 uma_dbg_getslab(uma_zone_t zone, void *item)
 {
@@ -6073,7 +6091,7 @@ uma_dbg_free(uma_zone_t zone, uma_slab_t slab, void *item)
 		panic("Duplicate free of %p from zone %p(%s) slab %p(%d)",
 		    item, zone, zone->uz_name, slab, freei);
 }
-#endif /* INVARIANTS */
+#endif /* INVARIANTS && !KASAN */
 
 #ifdef DDB
 static int64_t
